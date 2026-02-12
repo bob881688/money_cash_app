@@ -6,10 +6,10 @@ class getData{
     static String? baseUrl = dotenv.env['BASE_URL'];
 
     static Future<List<dynamic>> fetchData() async {
-        final url = Uri.parse("$baseUrl/api/data");
+        final url = Uri.parse("$baseUrl/data?user_id=1");
         
         try{
-        final response = await http.get(url);
+            final response = await http.get(url);
         
             if ( response.statusCode == 200 ) {
                 return List<dynamic>.from(json.decode(response.body));
