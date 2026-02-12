@@ -60,62 +60,57 @@ class _LogPageState extends State<LogPage> {
   List<dynamic> logs = [];
   bool isLoading = true;
 
-  List<Map<String, dynamic>> _fakeLogs() {
-    return List.generate(10, (i) {
-      final day = (i % 9) + 1;
-      return {
-        'date': '2026-02-${day.toString().padLeft(2, '0')}',
-        'content': '測試內容 ${i + 1}',
-        'shares': ((i + 1) * 10).toString(),
-        'amount': ((i + 1) * 1234).toString(),
-      };
-    });
+  @override
+  void initState() {
+    super.initState();
+    _loadLogs();
   }
 
-  // Map<String, dynamic>? _asStringKeyMap(dynamic value) {
-  //   if (value is Map<String, dynamic>) return value;
-  //   if (value is Map) {
-  //     return value.map((key, val) => MapEntry(key.toString(), val));
-  //   }
-  //   return null;
-  // }
-
-  String _pickString(dynamic log, List<String> keys) {
-    // final map = _asStringKeyMap(log);
-    if (log == null) return '';
-    for (final key in keys) {
-      final v = log[key];
-      if (v == null) continue;
-      final s = v.toString().trim();
-      if (s.isNotEmpty) return s;
+  /// 從 API 載入資料。
+  ///
+  /// 我們做了兩件事：
+  /// 1) 開始載入前把 isLoading 設為 true，UI 就會顯示中間的圈圈
+  /// 2) 用 try/catch 捕捉失敗，顯示 SnackBar 告訴使用者原因
+  Future<void> _loadLogs() async {
+    // 進入載入狀態：觸發 UI 顯示 CircularProgressIndicator。
+    if (mounted) {
+      setState(() {
+        isLoading = true;
+      });
     }
-    return '';
+
+    try {
+      final data = await getData.fetchData();
+
+      // await 結束後要再檢查 mounted，避免 setState 在 dispose 後被呼叫。
+      if (mounted) {
+        setState(() {
+          //logs = _fakeLogs();
+          logs = data;
+        });
+      }
+    } catch (e) {
+      // 任何例外都視為載入失敗：
+      // - 畫面會停止 loading
+      // - 底部跳出 SnackBar 顯示錯誤原因
+      _showErrorSnackBar(
+        '載入失敗：${e.toString().replaceAll("Exception:", "")}，5秒後將自動重試',
+      );
+      // 5秒後自動重試載入。
+      Future.delayed(const Duration(seconds: 5), () {
+        if (mounted) {
+          _loadLogs();
+        }
+      });
+    } finally {
+      // 不管成功或失敗，最後都要關掉 loading。
+      if (mounted) {
+        setState(() {
+          isLoading = false;
+        });
+      }
+    }
   }
-
-  String _dateText(dynamic log) => _pickString(log, [
-    'date',
-    '日期',
-    'createdAt',
-    'created_at',
-    'time',
-    'timestamp',
-  ]);
-
-  String _contentText(dynamic log) => _pickString(log, [
-    'content',
-    '內容',
-    'note',
-    'memo',
-    'title',
-    'name',
-    'description',
-  ]);
-
-  String _sharesText(dynamic log) =>
-      _pickString(log, ['shares', '股數', 'qty', 'quantity', 'amountShares']);
-
-  String _amountText(dynamic log) =>
-      _pickString(log, ['amount', '金額', 'total', 'price', 'money']);
 
   Widget _buildHeaderRow(BuildContext context) {
     final theme = Theme.of(context);
@@ -175,10 +170,19 @@ class _LogPageState extends State<LogPage> {
     final theme = Theme.of(context);
     final onSurface = theme.colorScheme.onSurface;
 
-    final date = _dateText(log);
-    final content = _contentText(log);
-    final shares = _sharesText(log);
-    final amount = _amountText(log);
+    final recordDate = log['record_date']?.toString().trim() ?? '';
+    final info = log['info']?.toString().trim() ?? '';
+    final stockAmount = log['stock_amount']?.toString().trim() ?? '';
+    final String balance;
+    
+    if ( log['balance'] > 0 ){
+      balance = "+${log['balance'].toString().trim()}";
+    }else if ( log['balance'] < 0 ){
+      balance = "${log['balance'].toString().trim()}";
+    }else{
+      balance = 0.toString().trim();
+    }
+    //final balance = log['balance']?.toString().trim() ?? '';
 
     Widget cell(
       String text, {
@@ -208,18 +212,18 @@ class _LogPageState extends State<LogPage> {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         child: Row(
           children: [
-            cell(date, flex: 2, color: Colors.white),
+            cell(recordDate, flex: 2, color: Colors.white),
             const SizedBox(width: 12),
             cell(
-              content.isEmpty ? 'Item $index' : content,
+              info.isEmpty ? 'Item $index' : info,
               flex: 4,
               color: Colors.white,
               align: TextAlign.left
             ),
             const SizedBox(width: 12),
-            cell(shares, flex: 2, color: Colors.white),
+            cell(stockAmount, flex: 2, color: Colors.white),
             const SizedBox(width: 12),
-            cell(amount, flex: 2, color: Colors.white),
+            cell(balance, flex: 2, color: balance[0] == '+' ? Colors.red : balance[0] == '-' ? Colors.green : Colors.white),
           ],
         ),
       ),
@@ -247,57 +251,7 @@ class _LogPageState extends State<LogPage> {
     );
   }
 
-  @override
-  void initState() {
-    super.initState();
-    _loadLogs();
-  }
-
-  /// 從 API 載入資料。
-  ///
-  /// 我們做了兩件事：
-  /// 1) 開始載入前把 isLoading 設為 true，UI 就會顯示中間的圈圈
-  /// 2) 用 try/catch 捕捉失敗，顯示 SnackBar 告訴使用者原因
-  Future<void> _loadLogs() async {
-    // 進入載入狀態：觸發 UI 顯示 CircularProgressIndicator。
-    if (mounted) {
-      setState(() {
-        isLoading = true;
-      });
-    }
-
-    try {
-      //final data = await getData.fetchData();
-
-      // await 結束後要再檢查 mounted，避免 setState 在 dispose 後被呼叫。
-      if (mounted) {
-        setState(() {
-          logs = _fakeLogs();
-          //logs = data;
-        });
-      }
-    } catch (e) {
-      // 任何例外都視為載入失敗：
-      // - 畫面會停止 loading
-      // - 底部跳出 SnackBar 顯示錯誤原因
-      _showErrorSnackBar(
-        '載入失敗：${e.toString().replaceAll("Exception:", "")}，5秒後將自動重試',
-      );
-      // 5秒後自動重試載入。
-      Future.delayed(const Duration(seconds: 5), () {
-        if (mounted) {
-          _loadLogs();
-        }
-      });
-    } finally {
-      // 不管成功或失敗，最後都要關掉 loading。
-      if (mounted) {
-        setState(() {
-          isLoading = false;
-        });
-      }
-    }
-  }
+  
 
   Future<void> _openEditDialog(BuildContext context) async {
     await showDialog<_ConfirmEditResult>(
@@ -381,17 +335,6 @@ class _ConfirmEditDialogState extends State<ConfirmEditDialog> {
   final _textFocusNodeTab2B = FocusNode();
   final _textFocusNodeTab3 = FocusNode();
   bool _enableAutovalidate = false;
-
-  String get _contentText {
-    switch (_tab) {
-      case _ConfirmEditTab.tab1:
-        return '1';
-      case _ConfirmEditTab.tab2:
-        return '2';
-      case _ConfirmEditTab.tab3:
-        return '3';
-    }
-  }
 
   @override
   void dispose() {
