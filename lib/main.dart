@@ -14,7 +14,6 @@ void main() async {
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
-  // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -174,15 +173,14 @@ class _LogPageState extends State<LogPage> {
     final info = log['info']?.toString().trim() ?? '';
     final stockAmount = log['stock_amount']?.toString().trim() ?? '';
     final String balance;
-    
+
     if ( log['balance'] > 0 ){
       balance = "+${log['balance'].toString().trim()}";
     }else if ( log['balance'] < 0 ){
-      balance = "${log['balance'].toString().trim()}";
+      balance = log['balance'].toString().trim();
     }else{
       balance = 0.toString().trim();
     }
-    //final balance = log['balance']?.toString().trim() ?? '';
 
     Widget cell(
       String text, {
