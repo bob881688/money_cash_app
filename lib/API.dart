@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
-class getData{
+class GetData{
     static String? baseUrl = dotenv.env['BASE_URL'];
 
     static Future<List<dynamic>> fetchData() async {

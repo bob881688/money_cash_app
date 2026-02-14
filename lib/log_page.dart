@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'API.dart';
+import 'api.dart';
 
 class LogPage extends StatefulWidget {
   const LogPage({super.key});
@@ -34,7 +34,7 @@ class _LogPageState extends State<LogPage> {
       ),
     );
   }
-	
+
   /// 從 API 載入資料。
   Future<void> _loadLogs() async {
     // 進入載入狀態：觸發 UI 顯示 CircularProgressIndicator。
@@ -45,7 +45,7 @@ class _LogPageState extends State<LogPage> {
     }
 
     try {
-      final data = await getData.fetchData();
+      final data = await GetData.fetchData();
 
       // await 結束後要再檢查 mounted，避免 setState 在 dispose 後被呼叫。
       if (mounted) {
@@ -199,11 +199,11 @@ class _LogPageState extends State<LogPage> {
   
 
   Future<void> _openEditDialog(BuildContext context) async {
-    await showDialog<_ConfirmEditResult>(
+    await showDialog(
       context: context,
       barrierDismissible: true,
       builder: (context) {
-        return const ConfirmEditDialog(title: '確認修改');
+        return const ConfirmDialog();
       },
     );
   }
@@ -238,4 +238,18 @@ class _LogPageState extends State<LogPage> {
       ),
     );
   }
+}
+
+class ConfirmDialog extends StatefulWidget{
+	const ConfirmDialog({super.key});
+
+	@override
+	State<ConfirmDialog> createState() => _ConfirmDialogState();
+}
+
+class _ConfirmDialogState extends State<ConfirmDialog>{
+	@override
+  Widget build(BuildContext context) {
+		return Dialog();
+	}
 }
