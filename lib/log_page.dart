@@ -18,7 +18,7 @@ class _LogPageState extends State<LogPage> {
     _loadLogs();
   }
 
-	/// 顯示「會自動消失」的底部提示（SnackBar）。
+  /// 顯示「會自動消失」的底部提示（SnackBar）。
   void _showErrorSnackBar(String message) {
     // initState 裡 await 之後，widget 可能已被移除；避免對已 dispose 的 context 操作。
     if (!mounted) return;
@@ -82,7 +82,11 @@ class _LogPageState extends State<LogPage> {
     final onSurface = theme.colorScheme.onSurface;
     final dividerColor = onSurface.withAlpha((0.18 * 255).round());
 
-    Widget cell(String text, {int flex = 2, TextAlign align = TextAlign.center}) {
+    Widget cell(
+      String text, {
+      int flex = 2,
+      TextAlign align = TextAlign.center,
+    }) {
       return Expanded(
         flex: flex,
         child: Text(
@@ -140,11 +144,11 @@ class _LogPageState extends State<LogPage> {
     final stockAmount = log['stock_amount']?.toString().trim() ?? '';
     final String balance;
 
-    if ( log['balance'] > 0 ){
+    if (log['balance'] > 0) {
       balance = "+${log['balance'].toString().trim()}";
-    }else if ( log['balance'] < 0 ){
+    } else if (log['balance'] < 0) {
       balance = log['balance'].toString().trim();
-    }else{
+    } else {
       balance = 0.toString().trim();
     }
 
@@ -182,21 +186,25 @@ class _LogPageState extends State<LogPage> {
               info.isEmpty ? 'Item $index' : info,
               flex: 4,
               color: Colors.white,
-              align: TextAlign.left
+              align: TextAlign.left,
             ),
             const SizedBox(width: 12),
             cell(stockAmount, flex: 2, color: Colors.white),
             const SizedBox(width: 12),
-            cell(balance, flex: 2, color: balance[0] == '+' ? Colors.red : balance[0] == '-' ? Colors.green : Colors.white),
+            cell(
+              balance,
+              flex: 2,
+              color: balance[0] == '+'
+                  ? Colors.red
+                  : balance[0] == '-'
+                  ? Colors.green
+                  : Colors.white,
+            ),
           ],
         ),
       ),
     );
   }
-
-  
-
-  
 
   Future<void> _openEditDialog(BuildContext context) async {
     await showDialog(
@@ -240,16 +248,106 @@ class _LogPageState extends State<LogPage> {
   }
 }
 
-class ConfirmDialog extends StatefulWidget{
-	const ConfirmDialog({super.key});
+class ConfirmDialog extends StatefulWidget {
+  const ConfirmDialog({super.key});
 
-	@override
-	State<ConfirmDialog> createState() => _ConfirmDialogState();
+  @override
+  State<ConfirmDialog> createState() => _ConfirmDialogState();
 }
 
-class _ConfirmDialogState extends State<ConfirmDialog>{
+class _ConfirmDialogState extends State<ConfirmDialog> {
+	int _tab = 0;
+  String? _pickValue;
+	
 	@override
   Widget build(BuildContext context) {
-		return Dialog();
-	}
+  final theme = Theme.of(context);
+
+
+    return Dialog(
+			backgroundColor: theme.appBarTheme.backgroundColor,
+			insetPadding: const EdgeInsets.all(24),
+			child: ConstrainedBox(
+				constraints: const BoxConstraints(maxWidth: 520),
+				child: SizedBox(
+					height: 420,
+					child: Column(
+						crossAxisAlignment: CrossAxisAlignment.stretch,
+						children: [
+							Padding(
+								padding: const EdgeInsets.fromLTRB(20, 18, 20, 10),
+								child: Text(
+									"確認修改",
+									textAlign: TextAlign.center,
+									style: theme.textTheme.titleLarge?.copyWith(
+										fontWeight: FontWeight.bold
+									),
+								),
+							),
+							const Divider(height: 1),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+                child: Center(
+                  child: ToggleButtons(
+                    isSelected: [
+                      _tab == 0,
+                      _tab == 1
+                      ],
+                    onPressed: (index){
+                      print(index);
+                      setState(() {
+                        _tab = index;
+                      });
+                    },
+                    borderRadius: BorderRadius.circular(6),
+                    borderColor: theme.colorScheme.onSurface.withAlpha((0.35*255).round()),
+                    selectedColor: theme.colorScheme.onPrimary,
+                    selectedBorderColor: Color.fromARGB(255, 70, 70, 70),
+                    fillColor: Color.fromARGB(255, 70, 70, 70),
+                    color: theme.colorScheme.onSurface,
+                    splashColor: Color.fromARGB(255, 70, 70, 70),
+                    constraints: const BoxConstraints(
+                      minHeight: 44,
+                      minWidth: 96,
+                    ),
+                    children: const [Text("修改"), Text("刪除")],
+                  )
+                ),
+              ),
+							UnconstrainedBox(
+								alignment: Alignment.centerLeft,
+								child: Padding(
+									padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+									child: SizedBox(
+										width: 150,
+										child: DropdownButtonFormField(
+											decoration: const InputDecoration(
+												filled: true,
+												fillColor: Color.fromARGB(255, 37, 37, 37)
+											),
+											dropdownColor: const Color.fromARGB(255, 37, 37, 37),
+											disabledHint: Text("功能開發中", style: TextStyle(color: Colors.grey),),
+											items: [
+												DropdownMenuItem(child: Text("修改", style: TextStyle(color: Colors.white),), value: "修改",),
+												DropdownMenuItem(child: Text("刪除", style: TextStyle(color: Colors.white),), value: "刪除",),
+												DropdownMenuItem(child: Text("啥", style: TextStyle(color: Colors.white),), value: "啥",)
+											],
+											onChanged:(value){
+												if (mounted){
+													setState(() {
+													  _pickValue = value?.toString();
+													});
+												}
+											}
+										)
+									)
+								),
+							),
+							Text(_pickValue.toString())
+						],
+					),
+				),
+			)
+		);
+  }
 }
