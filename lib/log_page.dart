@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'api.dart';
+import 'stock_search.dart';
 
 class LogPage extends StatefulWidget {
   const LogPage({super.key});
@@ -108,28 +110,28 @@ class _LogPageState extends State<LogPage> {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Row(
         children: [
-          cell('日期', flex: 2),
+          cell('日期', flex: 5),
           const SizedBox(width: 12),
           Align(
             alignment: Alignment.center,
             child: Container(width: 1, height: 18, color: dividerColor),
           ),
           const SizedBox(width: 12),
-          cell('內容', flex: 4),
+          cell('內容', flex: 8),
           const SizedBox(width: 12),
           Align(
             alignment: Alignment.center,
             child: Container(width: 1, height: 18, color: dividerColor),
           ),
           const SizedBox(width: 12),
-          cell('股數', flex: 2),
+          cell('股數', flex: 3),
           const SizedBox(width: 12),
           Align(
             alignment: Alignment.center,
             child: Container(width: 1, height: 18, color: dividerColor),
           ),
           const SizedBox(width: 12),
-          cell('金額', flex: 2),
+          cell('金額', flex: 4),
         ],
       ),
     );
@@ -174,26 +176,30 @@ class _LogPageState extends State<LogPage> {
 
     return InkWell(
       onTap: () {
-        _openEditDialog(context);
+        _openDialog(context: context, log: log, mode: "edit");
       },
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         child: Row(
           children: [
-            cell(recordDate, flex: 2, color: Colors.white),
+            cell(recordDate, flex: 5, color: Colors.white, align: TextAlign.left),
             const SizedBox(width: 12),
             cell(
-              info.isEmpty ? 'Item $index' : info,
-              flex: 4,
+              info.isEmpty ? '-' : info,
+              flex: 8,
               color: Colors.white,
               align: TextAlign.left,
             ),
             const SizedBox(width: 12),
-            cell(stockAmount, flex: 2, color: Colors.white),
+            cell(
+              stockAmount == '0' ? '-' : stockAmount,
+              flex: 3,
+              color: Colors.white,
+            ),
             const SizedBox(width: 12),
             cell(
               balance,
-              flex: 2,
+              flex: 4,
               color: balance[0] == '+'
                   ? Colors.red
                   : balance[0] == '-'
@@ -206,14 +212,25 @@ class _LogPageState extends State<LogPage> {
     );
   }
 
-  Future<void> _openEditDialog(BuildContext context) async {
-    await showDialog(
+  Future<void> _openDialog({
+    required BuildContext context,
+    dynamic log,
+    required String mode,
+  }) async {
+    final changed = await showDialog<bool>(
       context: context,
       barrierDismissible: true,
       builder: (context) {
-        return const ConfirmDialog();
+        // 在 Dialog route 內提供自己的 ScaffoldMessenger/Scaffold，
+        // 讓 ConfirmDialog 內的 SnackBar 顯示在同一層（不會跑到背後的頁面）。
+        return ConfirmDialog(log: log, mode: mode);
       },
     );
+
+    // 若 Dialog 內有成功送出修改，回來後刷新資料。
+    if (changed == true) {
+      await _loadLogs();
+    }
   }
 
   @override
@@ -222,7 +239,24 @@ class _LogPageState extends State<LogPage> {
       drawer: Drawer(
         backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       ),
-      appBar: AppBar(elevation: 0, title: const Text('記帳app')),
+      appBar: AppBar(
+        elevation: 0,
+        title: const Text('記帳app'),
+        actions: [
+          IconButton(
+            onPressed: () {
+              _loadLogs();
+            },
+            icon: const Icon(Icons.refresh),
+          ),
+          IconButton(
+            onPressed: () {
+              _openDialog(context: context, mode: "new");
+            },
+            icon: const Icon(Icons.add),
+          ),
+        ],
+      ),
       body: SafeArea(
         child: Column(
           children: [
@@ -249,105 +283,481 @@ class _LogPageState extends State<LogPage> {
 }
 
 class ConfirmDialog extends StatefulWidget {
-  const ConfirmDialog({super.key});
+  const ConfirmDialog({super.key, this.log, required this.mode});
+
+  final dynamic log;
+  final String mode;
 
   @override
   State<ConfirmDialog> createState() => _ConfirmDialogState();
 }
 
 class _ConfirmDialogState extends State<ConfirmDialog> {
-	int _tab = 0;
-  String? _pickValue;
-	
-	@override
-  Widget build(BuildContext context) {
-  final theme = Theme.of(context);
+  int _tab = 0;
+  String? _tradeMethod;
 
+  final _formKey = GlobalKey<FormState>();
+
+  StockItem? selectedStock;
+
+  final test = FocusNode();
+
+  final _stockNumberController = SearchController();
+  final _stockAmountController = TextEditingController();
+  final _contentController = TextEditingController();
+  final _balanceController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    StockSearch.instance.ensureLoaded();
+
+    if (widget.mode == "edit" && widget.log != null) {
+      _stockAmountController.text = widget.log["stock_amount"].toString();
+      _contentController.text = widget.log["info"].toString();
+      _balanceController.text = widget.log["balance"].toString();
+    }
+  }
+
+  @override
+  void dispose() {
+    super.dispose();
+    _stockNumberController.dispose();
+    _stockAmountController.dispose();
+    _contentController.dispose();
+    _balanceController.dispose();
+    test.dispose();
+  }
+
+  void _showSnackBar(String message) {
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.clearSnackBars();
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(message),
+        duration: const Duration(seconds: 3),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final viewInsets = MediaQuery.of(context).viewInsets;
+    final dialogHeight = ((MediaQuery.of(context).size.height -
+                viewInsets.bottom -
+                48.0)
+            .clamp(260.0, 510.0))
+        .toDouble();
 
     return Dialog(
-			backgroundColor: theme.appBarTheme.backgroundColor,
-			insetPadding: const EdgeInsets.all(24),
-			child: ConstrainedBox(
-				constraints: const BoxConstraints(maxWidth: 520),
-				child: SizedBox(
-					height: 420,
-					child: Column(
-						crossAxisAlignment: CrossAxisAlignment.stretch,
-						children: [
-							Padding(
-								padding: const EdgeInsets.fromLTRB(20, 18, 20, 10),
-								child: Text(
-									"確認修改",
-									textAlign: TextAlign.center,
-									style: theme.textTheme.titleLarge?.copyWith(
-										fontWeight: FontWeight.bold
-									),
-								),
-							),
-							const Divider(height: 1),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
-                child: Center(
-                  child: ToggleButtons(
-                    isSelected: [
-                      _tab == 0,
-                      _tab == 1
-                      ],
-                    onPressed: (index){
-                      print(index);
-                      setState(() {
-                        _tab = index;
-                      });
-                    },
-                    borderRadius: BorderRadius.circular(6),
-                    borderColor: theme.colorScheme.onSurface.withAlpha((0.35*255).round()),
-                    selectedColor: theme.colorScheme.onPrimary,
-                    selectedBorderColor: Color.fromARGB(255, 70, 70, 70),
-                    fillColor: Color.fromARGB(255, 70, 70, 70),
-                    color: theme.colorScheme.onSurface,
-                    splashColor: Color.fromARGB(255, 70, 70, 70),
-                    constraints: const BoxConstraints(
-                      minHeight: 44,
-                      minWidth: 96,
+      backgroundColor: theme.appBarTheme.backgroundColor,
+      insetPadding: const EdgeInsets.all(24),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 520),
+        child: SizedBox(
+          height: dialogHeight,
+          child: Form(
+            key: _formKey,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 18, 20, 10),
+                    child: Text(
+                      widget.mode == "edit" ? "確認修改" : "新增記錄",
+                      textAlign: TextAlign.center,
+                      style: theme.textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
-                    children: const [Text("修改"), Text("刪除")],
-                  )
+                  ),
                 ),
-              ),
-							UnconstrainedBox(
-								alignment: Alignment.centerLeft,
-								child: Padding(
-									padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
-									child: SizedBox(
-										width: 150,
-										child: DropdownButtonFormField(
-											decoration: const InputDecoration(
-												filled: true,
-												fillColor: Color.fromARGB(255, 37, 37, 37)
-											),
-											dropdownColor: const Color.fromARGB(255, 37, 37, 37),
-											disabledHint: Text("功能開發中", style: TextStyle(color: Colors.grey),),
-											items: [
-												DropdownMenuItem(child: Text("修改", style: TextStyle(color: Colors.white),), value: "修改",),
-												DropdownMenuItem(child: Text("刪除", style: TextStyle(color: Colors.white),), value: "刪除",),
-												DropdownMenuItem(child: Text("啥", style: TextStyle(color: Colors.white),), value: "啥",)
-											],
-											onChanged:(value){
-												if (mounted){
-													setState(() {
-													  _pickValue = value?.toString();
-													});
-												}
-											}
-										)
-									)
-								),
-							),
-							Text(_pickValue.toString())
-						],
-					),
-				),
-			)
-		);
+                const Divider(height: 1),
+                widget.mode == "edit"
+                  ? Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+                      child: Center(
+                        child: ToggleButtons(
+                          isSelected: [_tab == 0, _tab == 1],
+                          onPressed: (index) {
+                            setState(() {
+                              _tab = index;
+                            });
+                          },
+                          borderRadius: BorderRadius.circular(6),
+                          borderColor: theme.colorScheme.onSurface.withAlpha(
+                            (0.35 * 255).round(),
+                          ),
+                          selectedColor: theme.colorScheme.onPrimary,
+                          selectedBorderColor: Color.fromARGB(
+                            255,
+                            70,
+                            70,
+                            70,
+                          ),
+                          fillColor: Color.fromARGB(255, 70, 70, 70),
+                          color: theme.colorScheme.onSurface,
+                          splashColor: Color.fromARGB(255, 70, 70, 70),
+                          constraints: const BoxConstraints(
+                            minHeight: 44,
+                            minWidth: 96,
+                          ),
+                          children: const [Text("修改"), Text("刪除")],
+                        ),
+                      ),
+                    )
+                  : Container(),
+                Expanded(
+                  child: SingleChildScrollView(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (_tab == 0) ...[
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+                            child: SizedBox(
+                              width: 180,
+                              child: DropdownButtonFormField(
+                                focusNode: test,
+                                validator: (value) {
+                                  if (value == null || value.isEmpty) {
+                                    return '請選擇交易類別';
+                                  }
+                                  return null;
+                                },
+                                hint: Text(
+                                  "(選擇交易類別)",
+                                  style: TextStyle(color: Colors.grey),
+                                ),
+                                dropdownColor:
+                                    const Color.fromARGB(255, 37, 37, 37),
+                                disabledHint: Text(
+                                  "功能開發中",
+                                  style: TextStyle(color: Colors.grey),
+                                ),
+                                items: [
+                                  DropdownMenuItem(
+                                    value: "股票買入",
+                                    child: Text(
+                                      "股票買入",
+                                      style: TextStyle(color: Colors.white),
+                                    ),
+                                  ),
+                                  DropdownMenuItem(
+                                    value: "股票賣出",
+                                    child: Text(
+                                      "股票賣出",
+                                      style: TextStyle(color: Colors.white),
+                                    ),
+                                  ),
+                                  DropdownMenuItem(
+                                    value: "一般收入",
+                                    child: Text(
+                                      "一般收入",
+                                      style: TextStyle(color: Colors.white),
+                                    ),
+                                  ),
+                                  DropdownMenuItem(
+                                    value: "一般支出",
+                                    child: Text(
+                                      "一般支出",
+                                      style: TextStyle(color: Colors.white),
+                                    ),
+                                  ),
+                                ],
+                                onChanged: (value) {
+                                  if (mounted) {
+                                    setState(() {
+                                      _tradeMethod = value?.toString();
+                                      if (_tradeMethod != "股票買入" &&
+                                          _tradeMethod != "股票賣出") {
+                                        selectedStock = null;
+                                        _stockNumberController.clear();
+                                        _stockAmountController.clear();
+                                      }
+                                    });
+                                  }
+                                },
+                              ),
+                            ),
+                          ),
+                          Row(
+                            children: [
+                              Padding(
+                                padding:
+                                    const EdgeInsets.fromLTRB(16, 10, 16, 10),
+                                child: SizedBox(
+                                  height: 48,
+                                  width: 180,
+                                  child: SearchAnchor(
+                                    searchController: _stockNumberController,
+                                    isFullScreen: false,
+                                    viewTrailing: [
+                                      IconButton(
+                                        onPressed: () {
+                                          setState(() {
+                                            selectedStock = null;
+                                            _stockNumberController.clear();
+                                          });
+                                        },
+                                        icon: Icon(Icons.close),
+                                      ),
+                                    ],
+                                    viewOnClose: () {
+                                      if (selectedStock != null) {
+                                        setState(() {
+                                          _stockNumberController.text =
+                                              selectedStock!
+                                                  .symbol; // 顯示在備註欄；你真正存到記帳資料應該是 item.symbol
+                                        });
+                                      }
+                                    },
+                                    builder: (context, controller) {
+                                      return SearchBar(
+                                        controller: controller,
+                                        padding: const WidgetStatePropertyAll(
+                                          EdgeInsets.symmetric(horizontal: 12.0),
+                                        ),
+                                        onTap: controller.openView,
+                                        onChanged: (_) => controller.openView(),
+                                        leading:
+                                            const Icon(Icons.search, size: 15),
+                                        hintText: '輸入代號或名稱',
+                                      );
+                                    },
+                                    suggestionsBuilder: (context, controller) {
+                                      final q = controller.text.trim();
+                                      if (q.isEmpty) return [];
+                                      final isDigits =
+                                          RegExp(r'^\\d+$').hasMatch(q);
+
+                                      // 避免名稱 1 個字就掃 3 萬筆（例如「大」）
+                                      if (!isDigits && q.length < 2) {
+                                        return [
+                                          ListTile(title: Text('請至少輸入2個字'))
+                                        ];
+                                      }
+
+                                      final results = StockSearch.instance.search(
+                                        q,
+                                        limit: 20,
+                                      );
+
+                                      if (results.isEmpty) {
+                                        return [
+                                          ListTile(title: Text('找不到符合的股票'))
+                                        ];
+                                      }
+
+                                      return results.map((item) {
+                                        return ListTile(
+                                          title: Text(item.label),
+                                          // "0050 元大台灣50"
+                                          onTap: () {
+                                            setState(() {
+                                              selectedStock = item;
+                                              _contentController.text = item.name;
+                                              // 顯示在備註欄；你真正存到記帳資料應該是 item.symbol
+                                            });
+                                            // SearchBar 顯示 label；你真正存到記帳資料應該是 item.symbol
+                                            controller.closeView(item.symbol);
+                                          },
+                                        );
+                                      }).toList();
+                                    },
+                                  ),
+                                ),
+                              ),
+                              Expanded(
+                                child: Padding(
+                                  padding:
+                                      const EdgeInsets.fromLTRB(16, 10, 16, 10),
+                                  child: TextFormField(
+                                    controller: _stockAmountController,
+                                    decoration: InputDecoration(
+                                      labelText: "股數",
+                                      labelStyle: TextStyle(color: Colors.grey),
+                                      prefixIcon: Icon(
+                                        Icons.confirmation_number,
+                                        size: 20,
+                                        color: Colors.grey,
+                                      ),
+                                    ),
+                                    keyboardType:
+                                        const TextInputType.numberWithOptions(
+                                      signed: false,
+                                      decimal: false,
+                                    ),
+                                    inputFormatters: [
+                                      FilteringTextInputFormatter.digitsOnly,
+                                    ],
+                                  ),
+                                ),
+                              )
+                            ],
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+                            child: SizedBox(
+                              width: 270,
+                              child: TextFormField(
+                                controller: _contentController,
+                                decoration: InputDecoration(
+                                  labelText: "備註",
+                                  labelStyle: TextStyle(color: Colors.grey),
+                                  prefixIcon: Icon(
+                                    Icons.edit_note,
+                                    size: 20,
+                                    color: Colors.grey,
+                                  ),
+                                ),
+                                keyboardType: TextInputType.text,
+                              ),
+                            ),
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+                            child: SizedBox(
+                              width: 150,
+                              child: TextFormField(
+                                controller: _balanceController,
+                                validator: (value) {
+                                  if (value == null || value.trim().isEmpty) {
+                                    return '請輸入金額';
+                                  }
+                                  if (int.tryParse(value.trim()) == null) {
+                                    return '金額必須是數字';
+                                  }
+                                  return null;
+                                },
+                                decoration: InputDecoration(
+                                  labelText: "金額",
+                                  labelStyle: TextStyle(color: Colors.grey),
+                                  prefixIcon: Icon(
+                                    Icons.attach_money,
+                                    size: 20,
+                                    color: Colors.grey,
+                                  ),
+                                ),
+                                keyboardType: TextInputType.numberWithOptions(
+                                  signed: false,
+                                ),
+                                inputFormatters: [
+                                  FilteringTextInputFormatter.digitsOnly,
+                                ],
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                        ] else ...[
+                          SizedBox(
+                            height: 260,
+                            child: Center(
+                              child: Text(
+                                "確定要刪除嗎?",
+                                style: TextStyle(fontSize: 25, color: Colors.grey),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+                const Divider(height: 1),
+                SizedBox(
+                  height: 60,
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: SizedBox(
+                          height: double.infinity,
+                          child: TextButton(
+                            onPressed: () {
+                              Navigator.of(context).pop(
+                                //_ConfirmEditResult(tab: _tab, confirmed: false),
+                              );
+                            },
+                            child: const Text('取消'),
+                          ),
+                        ),
+                      ),
+                      Container(
+                        width: 1,
+                        color: Color.fromARGB(255, 96, 96, 96),
+                      ),
+                      Expanded(
+                        child: SizedBox(
+                          height: double.infinity,
+                          child: TextButton(
+                            onPressed: () async {
+                              if (!_formKey.currentState!.validate()) {
+                                return;
+                              }
+
+                              final info = (_tradeMethod == "股票買入" || _tradeMethod == "股票賣出")
+                                        ? "【股票】${_stockNumberController.text} ${_contentController.text}"
+                                        : _contentController.text;
+                              final stockAmount = int.tryParse(_stockAmountController.text) ?? 0;
+                              final balance = (_tradeMethod == "股票買入" || _tradeMethod == "一般支出")
+                                          ? -(int.tryParse(_balanceController.text) ?? 0)
+                                          : int.tryParse(_balanceController.text) ?? 0;
+
+                              try {
+                                widget.mode == "edit"
+                                  ? _tab == 0
+                                    ? await GetData.editData(
+                                        widget.log["log_id"],
+                                        {
+                                          "info": info,
+                                          "stock_amount": stockAmount,
+                                          "balance": balance,
+                                        },
+                                      )
+                                    : await GetData.deleteData(
+                                        widget.log["log_id"],
+                                      )
+                                  : await GetData.createData({
+                                      "user_id": 1,
+                                      "info": info,
+                                      "stock_amount": stockAmount,
+                                      "balance": balance,
+                                    });
+                              }catch (e){
+                                widget.mode == "edit"
+                                  ? _tab == 0
+                                    ? _showSnackBar(
+                                        "修改失敗: ${e.toString().replaceAll("Exception: ", "")}",
+                                      )
+                                    : _showSnackBar(
+                                        "刪除失敗: ${e.toString().replaceAll("Exception: ", "")}",
+                                      )
+                                  : _showSnackBar(
+                                      "新增失敗: ${e.toString().replaceAll("Exception: ", "")}",
+                                    );
+                              }
+
+                              // 回傳 true 給外層，表示已成功修改；外層收到後刷新列表。
+                              if (!context.mounted) return;
+                              Navigator.of(context).pop(true);
+                            },
+                            child: const Text('確定'),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                //Text(selectedStock?.symbol.toString() ?? "未選擇股票")
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
