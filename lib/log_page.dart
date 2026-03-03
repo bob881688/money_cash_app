@@ -14,6 +14,8 @@ class _LogPageState extends State<LogPage> {
   List<dynamic> logs = [];
   bool isLoading = true;
 
+  int totalBalance = 0;
+
   @override
   void initState() {
     super.initState();
@@ -77,6 +79,61 @@ class _LogPageState extends State<LogPage> {
         });
       }
     }
+
+    if (logs.isNotEmpty) {
+      totalBalance = 0;
+
+      for (dynamic log in logs) {
+        totalBalance += (log["balance"] as num).toInt();
+      }
+    }
+  }
+
+  Widget _buildTotalBalanceRow(BuildContext context, int balance) {
+    final balanceDisplay = (balance > 0)
+        ? "+$balance"
+        : (balance < 0)
+        ? "-$balance"
+        : "0";
+    final displayColor = (balance > 0)
+        ? Colors.red
+        : (balance < 0)
+        ? Colors.green
+        : Colors.white;
+    final backgroundColor =
+        Theme.of(context).appBarTheme.backgroundColor ?? Colors.black;
+
+    return Container(
+      height: 62,
+      width: double.infinity,
+      color: backgroundColor,
+      alignment: Alignment.center,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: backgroundColor
+              .withRed(60)
+              .withGreen(60)
+              .withBlue(60)
+              .withAlpha(60),
+          border: Border.all(color: backgroundColor.withAlpha(100)),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Column(
+          children: [
+            Text("目前總損益:", style: TextStyle(color: Colors.grey, fontSize: 11)),
+            Text(
+              balanceDisplay,
+              style: TextStyle(
+                color: displayColor,
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _buildHeaderRow(BuildContext context) {
@@ -260,6 +317,7 @@ class _LogPageState extends State<LogPage> {
       body: SafeArea(
         child: Column(
           children: [
+            _buildTotalBalanceRow(context, totalBalance),
             _buildHeaderRow(context),
             const Divider(height: 1),
             Expanded(
@@ -292,7 +350,7 @@ class ConfirmDialog extends StatefulWidget {
   State<ConfirmDialog> createState() => _ConfirmDialogState();
 }
 
-class _ConfirmDialogState extends State<ConfirmDialog> {
+class _ConfirmDialogState extends State<ConfirmDialog> with WidgetsBindingObserver {
   int _tab = 0;
   String? _tradeMethod;
 
@@ -302,6 +360,15 @@ class _ConfirmDialogState extends State<ConfirmDialog> {
 
   final test = FocusNode();
 
+  final _stockSearchFocusNode = FocusNode();
+  final _stockAmountFocusNode = FocusNode();
+  final _contentFocusNode = FocusNode();
+  final _balanceFocusNode = FocusNode();
+
+  FocusNode? _lastInputFocusNode;
+  bool _restoreKeyboardOnResume = false;
+  bool _keyboardWasVisible = false;
+
   final _stockNumberController = SearchController();
   final _stockAmountController = TextEditingController();
   final _contentController = TextEditingController();
@@ -310,7 +377,21 @@ class _ConfirmDialogState extends State<ConfirmDialog> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     StockSearch.instance.ensureLoaded();
+
+    void trackFocus(FocusNode node) {
+      node.addListener(() {
+        if (node.hasFocus) {
+          _lastInputFocusNode = node;
+        }
+      });
+    }
+
+    trackFocus(_stockSearchFocusNode);
+    trackFocus(_stockAmountFocusNode);
+    trackFocus(_contentFocusNode);
+    trackFocus(_balanceFocusNode);
 
     if (widget.mode == "edit" && widget.log != null) {
       _stockAmountController.text = widget.log["stock_amount"].toString();
@@ -320,13 +401,52 @@ class _ConfirmDialogState extends State<ConfirmDialog> {
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (!mounted) return;
+
+    switch (state) {
+      case AppLifecycleState.inactive:
+      case AppLifecycleState.paused:
+      case AppLifecycleState.hidden:
+        // 如果切到背景前正在輸入，記下來：回到前景時自動恢復鍵盤。
+        _restoreKeyboardOnResume =
+            _keyboardWasVisible &&
+            (_lastInputFocusNode?.hasFocus ?? false);
+        break;
+      case AppLifecycleState.resumed:
+        if (!_restoreKeyboardOnResume) return;
+
+        final node = _lastInputFocusNode;
+        if (node == null || !node.canRequestFocus) return;
+
+        // 確保畫面已經穩定，然後再叫出鍵盤。
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          // 重新取得 focus，並嘗試叫出系統鍵盤。
+          FocusScope.of(context).requestFocus(node);
+          SystemChannels.textInput.invokeMethod('TextInput.show');
+        });
+
+        _restoreKeyboardOnResume = false;
+        break;
+      case AppLifecycleState.detached:
+        break;
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     super.dispose();
     _stockNumberController.dispose();
     _stockAmountController.dispose();
     _contentController.dispose();
     _balanceController.dispose();
     test.dispose();
+    _stockSearchFocusNode.dispose();
+    _stockAmountFocusNode.dispose();
+    _contentFocusNode.dispose();
+    _balanceFocusNode.dispose();
   }
 
   void _showSnackBar(String message) {
@@ -346,11 +466,16 @@ class _ConfirmDialogState extends State<ConfirmDialog> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final viewInsets = MediaQuery.of(context).viewInsets;
-    final dialogHeight = ((MediaQuery.of(context).size.height -
-                viewInsets.bottom -
-                48.0)
-            .clamp(260.0, 510.0))
-        .toDouble();
+
+    // `viewInsets.bottom` > 0 通常表示系統鍵盤正在顯示，佔用了畫面底部空間。
+    // 用它來避免「鍵盤已手動收起但輸入框仍有焦點（游標閃爍）」時，切回來又被自動打開。
+    _keyboardWasVisible = viewInsets.bottom > 0;
+
+    final dialogHeight =
+        ((MediaQuery.of(context).size.height - viewInsets.bottom - 48.0).clamp(
+          260.0,
+          510.0,
+        )).toDouble();
 
     return Dialog(
       backgroundColor: theme.appBarTheme.backgroundColor,
@@ -389,9 +514,7 @@ class _ConfirmDialogState extends State<ConfirmDialog> {
                             });
                           },
                           borderRadius: BorderRadius.circular(6),
-                          borderColor: theme.colorScheme.onSurface.withAlpha(
-                            (0.35 * 255).round(),
-                          ),
+                          borderColor: theme.colorScheme.onSurface.withAlpha((0.35 * 255).round()),
                           selectedColor: theme.colorScheme.onPrimary,
                           selectedBorderColor: Color.fromARGB(
                             255,
@@ -433,8 +556,7 @@ class _ConfirmDialogState extends State<ConfirmDialog> {
                                   "(選擇交易類別)",
                                   style: TextStyle(color: Colors.grey),
                                 ),
-                                dropdownColor:
-                                    const Color.fromARGB(255, 37, 37, 37),
+                                dropdownColor: const Color.fromARGB(255, 37, 37, 37),
                                 disabledHint: Text(
                                   "功能開發中",
                                   style: TextStyle(color: Colors.grey),
@@ -488,8 +610,7 @@ class _ConfirmDialogState extends State<ConfirmDialog> {
                           Row(
                             children: [
                               Padding(
-                                padding:
-                                    const EdgeInsets.fromLTRB(16, 10, 16, 10),
+                                padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
                                 child: SizedBox(
                                   height: 48,
                                   width: 180,
@@ -510,30 +631,27 @@ class _ConfirmDialogState extends State<ConfirmDialog> {
                                     viewOnClose: () {
                                       if (selectedStock != null) {
                                         setState(() {
-                                          _stockNumberController.text =
-                                              selectedStock!
-                                                  .symbol; // 顯示在備註欄；你真正存到記帳資料應該是 item.symbol
+                                          _stockNumberController.text = selectedStock!.symbol; // 顯示在備註欄；你真正存到記帳資料應該是 item.symbol
                                         });
                                       }
                                     },
                                     builder: (context, controller) {
                                       return SearchBar(
                                         controller: controller,
+                                        focusNode: _stockSearchFocusNode,
                                         padding: const WidgetStatePropertyAll(
                                           EdgeInsets.symmetric(horizontal: 12.0),
                                         ),
                                         onTap: controller.openView,
                                         onChanged: (_) => controller.openView(),
-                                        leading:
-                                            const Icon(Icons.search, size: 15),
+                                        leading: const Icon(Icons.search, size: 15,),
                                         hintText: '輸入代號或名稱',
                                       );
                                     },
                                     suggestionsBuilder: (context, controller) {
                                       final q = controller.text.trim();
                                       if (q.isEmpty) return [];
-                                      final isDigits =
-                                          RegExp(r'^\\d+$').hasMatch(q);
+                                      final isDigits = RegExp(r'^\\d+$').hasMatch(q);
 
                                       // 避免名稱 1 個字就掃 3 萬筆（例如「大」）
                                       if (!isDigits && q.length < 2) {
@@ -542,10 +660,7 @@ class _ConfirmDialogState extends State<ConfirmDialog> {
                                         ];
                                       }
 
-                                      final results = StockSearch.instance.search(
-                                        q,
-                                        limit: 20,
-                                      );
+                                      final results = StockSearch.instance.search(q, limit: 20);
 
                                       if (results.isEmpty) {
                                         return [
@@ -574,10 +689,10 @@ class _ConfirmDialogState extends State<ConfirmDialog> {
                               ),
                               Expanded(
                                 child: Padding(
-                                  padding:
-                                      const EdgeInsets.fromLTRB(16, 10, 16, 10),
+                                  padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
                                   child: TextFormField(
                                     controller: _stockAmountController,
+                                    focusNode: _stockAmountFocusNode,
                                     decoration: InputDecoration(
                                       labelText: "股數",
                                       labelStyle: TextStyle(color: Colors.grey),
@@ -588,10 +703,7 @@ class _ConfirmDialogState extends State<ConfirmDialog> {
                                       ),
                                     ),
                                     keyboardType:
-                                        const TextInputType.numberWithOptions(
-                                      signed: false,
-                                      decimal: false,
-                                    ),
+                                        const TextInputType.numberWithOptions(signed: false, decimal: false),
                                     inputFormatters: [
                                       FilteringTextInputFormatter.digitsOnly,
                                     ],
@@ -606,6 +718,7 @@ class _ConfirmDialogState extends State<ConfirmDialog> {
                               width: 270,
                               child: TextFormField(
                                 controller: _contentController,
+                                focusNode: _contentFocusNode,
                                 decoration: InputDecoration(
                                   labelText: "備註",
                                   labelStyle: TextStyle(color: Colors.grey),
@@ -625,6 +738,7 @@ class _ConfirmDialogState extends State<ConfirmDialog> {
                               width: 150,
                               child: TextFormField(
                                 controller: _balanceController,
+                                focusNode: _balanceFocusNode,
                                 validator: (value) {
                                   if (value == null || value.trim().isEmpty) {
                                     return '請輸入金額';
