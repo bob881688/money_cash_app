@@ -368,6 +368,7 @@ class _ConfirmDialogState extends State<ConfirmDialog> with WidgetsBindingObserv
   FocusNode? _lastInputFocusNode;
   bool _restoreKeyboardOnResume = false;
   bool _keyboardWasVisible = false;
+  bool _isLeavingForeground = false;
 
   final _stockNumberController = SearchController();
   final _stockAmountController = TextEditingController();
@@ -408,12 +409,14 @@ class _ConfirmDialogState extends State<ConfirmDialog> with WidgetsBindingObserv
       case AppLifecycleState.inactive:
       case AppLifecycleState.paused:
       case AppLifecycleState.hidden:
+        _isLeavingForeground = true;
         // 如果切到背景前正在輸入，記下來：回到前景時自動恢復鍵盤。
         _restoreKeyboardOnResume =
             _keyboardWasVisible &&
             (_lastInputFocusNode?.hasFocus ?? false);
         break;
       case AppLifecycleState.resumed:
+        _isLeavingForeground = false;
         if (!_restoreKeyboardOnResume) return;
 
         final node = _lastInputFocusNode;
@@ -432,6 +435,19 @@ class _ConfirmDialogState extends State<ConfirmDialog> with WidgetsBindingObserv
       case AppLifecycleState.detached:
         break;
     }
+  }
+
+  @override
+  void didChangeMetrics() {
+    if (!mounted) return;
+
+    // 切到背景時，系統常會先把鍵盤收起來再送出 paused/hidden；
+    // 若我們在「離開前景」期間更新鍵盤狀態，會把原本的 true 覆蓋成 false，導致回來無法恢復。
+    if (_isLeavingForeground) return;
+
+    final view = WidgetsBinding.instance.platformDispatcher.views.first;
+    final bottomInset = view.viewInsets.bottom / view.devicePixelRatio;
+    _keyboardWasVisible = bottomInset > 0;
   }
 
   @override
@@ -466,10 +482,6 @@ class _ConfirmDialogState extends State<ConfirmDialog> with WidgetsBindingObserv
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final viewInsets = MediaQuery.of(context).viewInsets;
-
-    // `viewInsets.bottom` > 0 通常表示系統鍵盤正在顯示，佔用了畫面底部空間。
-    // 用它來避免「鍵盤已手動收起但輸入框仍有焦點（游標閃爍）」時，切回來又被自動打開。
-    _keyboardWasVisible = viewInsets.bottom > 0;
 
     final dialogHeight =
         ((MediaQuery.of(context).size.height - viewInsets.bottom - 48.0).clamp(
