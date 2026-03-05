@@ -206,7 +206,7 @@ class _LogPageState extends State<LogPage> {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Row(
         children: [
-          cell('編號', flex: 1),
+          cell('編號', flex: 2),
           const SizedBox(width: 12),
           Align(
             alignment: Alignment.center,
@@ -220,14 +220,14 @@ class _LogPageState extends State<LogPage> {
             child: Container(width: 1, height: 18, color: dividerColor),
           ),
           const SizedBox(width: 12),
-          cell('股數', flex: 2),
+          cell('股數', flex: 3),
           const SizedBox(width: 12),
           Align(
             alignment: Alignment.center,
             child: Container(width: 1, height: 18, color: dividerColor),
           ),
           const SizedBox(width: 12),
-          cell('金額', flex: 2),
+          cell('金額', flex: 3),
         ],
       ),
     );
@@ -278,7 +278,7 @@ class _LogPageState extends State<LogPage> {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         child: Row(
           children: [
-            cell(no.toString(), flex: 1, color: Colors.white),
+            cell(no.toString(), flex: 2, color: Colors.white),
             const SizedBox(width: 12),
             cell(
               info.isEmpty ? '-' : info,
@@ -289,13 +289,13 @@ class _LogPageState extends State<LogPage> {
             const SizedBox(width: 12),
             cell(
               stockAmount == '0' ? '-' : stockAmount,
-              flex: 2,
+              flex: 3,
               color: Colors.white,
             ),
             const SizedBox(width: 12),
             cell(
               balance,
-              flex: 2,
+              flex: 3,
               color: balance[0] == '+'
                   ? Colors.red
                   : balance[0] == '-'
@@ -893,7 +893,7 @@ class _ConfirmDialogState extends State<ConfirmDialog> with WidgetsBindingObserv
                               }
 
                               final info = (_tradeMethod == "股票買入" || _tradeMethod == "股票賣出")
-                                        ? "【股票交割】${_stockNumberController.text} ${_contentController.text}"
+                                        ? "${_stockNumberController.text} ${_contentController.text}"
                                         : _contentController.text;
                               final stockAmount = int.tryParse(_stockAmountController.text) ?? 0;
                               final balance = (_tradeMethod == "股票買入" || _tradeMethod == "一般支出")
