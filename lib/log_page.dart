@@ -3,6 +3,21 @@ import 'package:flutter/services.dart';
 import 'api.dart';
 import 'stock_search.dart';
 
+abstract class _DisplayItem {
+  const _DisplayItem();
+}
+
+class _DateHeaderItem extends _DisplayItem {
+  const _DateHeaderItem(this.date);
+  final String date;
+}
+
+class _LogRowItem extends _DisplayItem {
+  const _LogRowItem(this.log, this.no);
+  final dynamic log;
+  final int no; // 同一天內的序號（最新=1）
+}
+
 class LogPage extends StatefulWidget {
   const LogPage({super.key});
 
@@ -12,6 +27,7 @@ class LogPage extends StatefulWidget {
 
 class _LogPageState extends State<LogPage> {
   List<dynamic> logs = [];
+  var displayItems = <_DisplayItem>[];
   bool isLoading = true;
 
   int totalBalance = 0;
@@ -56,6 +72,7 @@ class _LogPageState extends State<LogPage> {
         setState(() {
           //logs = _fakeLogs();
           logs = data;
+          displayItems = _buildDisplayItems(logs);
         });
       }
     } catch (e) {
@@ -87,6 +104,28 @@ class _LogPageState extends State<LogPage> {
         totalBalance += (log["balance"] as num).toInt();
       }
     }
+  }
+
+  List<_DisplayItem> _buildDisplayItems(List<dynamic> sourceLogs) {
+    final items = <_DisplayItem>[];
+
+    String? currentDate;
+    var dayNo = 0;
+
+    for (final log in sourceLogs) {
+      final dateKey = log["record_date"]?.toString().trim() ?? '';
+
+      if (currentDate != dateKey) {
+        currentDate = dateKey;
+        dayNo = 0;
+        items.add(_DateHeaderItem(dateKey.isEmpty ? '-' : dateKey));
+      }
+
+      dayNo += 1;
+      items.add(_LogRowItem(log, dayNo));
+    }
+
+    return items;
   }
 
   Widget _buildTotalBalanceRow(BuildContext context, int balance) {
@@ -167,7 +206,7 @@ class _LogPageState extends State<LogPage> {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Row(
         children: [
-          cell('日期', flex: 5),
+          cell('編號', flex: 1),
           const SizedBox(width: 12),
           Align(
             alignment: Alignment.center,
@@ -181,20 +220,20 @@ class _LogPageState extends State<LogPage> {
             child: Container(width: 1, height: 18, color: dividerColor),
           ),
           const SizedBox(width: 12),
-          cell('股數', flex: 3),
+          cell('股數', flex: 2),
           const SizedBox(width: 12),
           Align(
             alignment: Alignment.center,
             child: Container(width: 1, height: 18, color: dividerColor),
           ),
           const SizedBox(width: 12),
-          cell('金額', flex: 4),
+          cell('金額', flex: 2),
         ],
       ),
     );
   }
 
-  Widget _buildLogRow(BuildContext context, dynamic log, int index) {
+  Widget _buildLogRow(BuildContext context, dynamic log, int no) {
     final theme = Theme.of(context);
     final onSurface = theme.colorScheme.onSurface;
 
@@ -239,7 +278,7 @@ class _LogPageState extends State<LogPage> {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         child: Row(
           children: [
-            cell(recordDate, flex: 5, color: Colors.white, align: TextAlign.left),
+            cell(no.toString(), flex: 1, color: Colors.white),
             const SizedBox(width: 12),
             cell(
               info.isEmpty ? '-' : info,
@@ -250,13 +289,13 @@ class _LogPageState extends State<LogPage> {
             const SizedBox(width: 12),
             cell(
               stockAmount == '0' ? '-' : stockAmount,
-              flex: 3,
+              flex: 2,
               color: Colors.white,
             ),
             const SizedBox(width: 12),
             cell(
               balance,
-              flex: 4,
+              flex: 2,
               color: balance[0] == '+'
                   ? Colors.red
                   : balance[0] == '-'
@@ -265,6 +304,27 @@ class _LogPageState extends State<LogPage> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildDateHeaderRow(BuildContext context, String dateText) {
+    final theme = Theme.of(context);
+    final onSurface = theme.colorScheme.onSurface;
+
+    return Container(
+      width: double.infinity,
+      color: const Color.fromARGB(255, 13, 39, 52),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      alignment: Alignment.centerLeft,
+      child: Text(
+        dateText,
+        style: theme.textTheme.titleSmall?.copyWith(
+              color: onSurface,
+              fontWeight: FontWeight.bold,
+            ) ??
+            TextStyle(color: onSurface, fontWeight: FontWeight.bold),
+        overflow: TextOverflow.ellipsis,
       ),
     );
   }
@@ -324,10 +384,16 @@ class _LogPageState extends State<LogPage> {
               child: isLoading
                   ? const Center(child: CircularProgressIndicator())
                   : ListView.separated(
-                      itemCount: logs.length,
+                      itemCount: displayItems.length,
                       itemBuilder: (context, index) {
-                        final log = logs[index];
-                        return _buildLogRow(context, log, index);
+                        final log = displayItems[index];
+
+                        if ( log is _DateHeaderItem ){
+                          return _buildDateHeaderRow(context, log.date);
+                        }
+
+                        final logRow = log as _LogRowItem;
+                        return _buildLogRow(context, logRow.log, logRow.no);
                       },
                       separatorBuilder: (context, index) =>
                           const Divider(height: 1),
@@ -339,6 +405,7 @@ class _LogPageState extends State<LogPage> {
     );
   }
 }
+
 
 class ConfirmDialog extends StatefulWidget {
   const ConfirmDialog({super.key, this.log, required this.mode});
@@ -826,7 +893,7 @@ class _ConfirmDialogState extends State<ConfirmDialog> with WidgetsBindingObserv
                               }
 
                               final info = (_tradeMethod == "股票買入" || _tradeMethod == "股票賣出")
-                                        ? "【股票】${_stockNumberController.text} ${_contentController.text}"
+                                        ? "【股票交割】${_stockNumberController.text} ${_contentController.text}"
                                         : _contentController.text;
                               final stockAmount = int.tryParse(_stockAmountController.text) ?? 0;
                               final balance = (_tradeMethod == "股票買入" || _tradeMethod == "一般支出")
