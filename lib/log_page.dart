@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'api.dart';
 import 'stock_search.dart';
+import 'login_page.dart';
 
 abstract class _DisplayItem {
   const _DisplayItem();
@@ -76,6 +77,15 @@ class _LogPageState extends State<LogPage> {
         });
       }
     } catch (e) {
+      if (e is AuthRequiredException) {
+        if (!mounted) return;
+        _showErrorSnackBar(e.toString());
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (_) => const LoginPage()),
+        );
+        return;
+      }
+
       // 任何例外都視為載入失敗：
       // - 畫面會停止 loading
       // - 底部跳出 SnackBar 顯示錯誤原因
@@ -132,7 +142,7 @@ class _LogPageState extends State<LogPage> {
     final balanceDisplay = (balance > 0)
         ? "+$balance"
         : (balance < 0)
-        ? "-$balance"
+        ? "$balance"
         : "0";
     final displayColor = (balance > 0)
         ? Colors.red
@@ -915,7 +925,6 @@ class _ConfirmDialogState extends State<ConfirmDialog> with WidgetsBindingObserv
                                         widget.log["log_id"],
                                       )
                                   : await GetData.createData({
-                                      "user_id": 1,
                                       "info": info,
                                       "stock_amount": stockAmount,
                                       "balance": balance,

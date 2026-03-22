@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
-import 'log_page.dart';
+import 'login_page.dart';
 
 void main() async {
   // 因為 main() 內有 await（dotenv.load），先確保 Flutter 的 binding 已初始化。
@@ -85,7 +85,7 @@ class MyApp extends StatelessWidget {
 				)
       ),
 
-      home: const LogPage(),
+      home: const LoginPage(),
     );
   }
 }
