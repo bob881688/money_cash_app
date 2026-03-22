@@ -3,3 +3,6 @@ fastapi
 sqlalchemy
 pydantic-settings
 psycopg2
+python-multipart
+pyjwt
+"pwdlib[argon2]"

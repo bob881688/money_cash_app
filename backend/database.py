@@ -1,8 +1,15 @@
+from fastapi import Depends, HTTPException, status
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from pathlib import Path
 from sqlalchemy import text
+from sqlalchemy.exc import (
+    DBAPIError,
+    InterfaceError,
+    OperationalError,
+    SQLAlchemyError,
+)
 
 from config import Settings
 settings = Settings()
@@ -36,3 +43,23 @@ async def init_resources():
 
 async def close_resources():
     print("關閉資料庫連線")
+
+# 處理資料庫相關的例外
+def handle_db_exceptions(e: Exception):
+    if isinstance(e, (OperationalError, InterfaceError)):
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="資料庫連線失敗，請稍後再試",
+        )
+    
+    elif isinstance(e, (DBAPIError, SQLAlchemyError)):
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="資料庫操作失敗，請稍後再試",
+        )
+    
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="未知錯誤，請稍後再試",
+        )

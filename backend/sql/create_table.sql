@@ -7,7 +7,11 @@ CREATE TABLE IF NOT EXISTS log_data (
     balance          INTEGER
 );
 
-CREATE TABLE IF NOT EXISTS user_balance (
-    user_id          INTEGER,
-    balance          BIGINT
+CREATE TABLE IF NOT EXISTS users (
+    user_id          SERIAL,
+    username         VARCHAR(50) NOT NULL PRIMARY KEY,
+    password         VARCHAR(255) NOT NULL,
+    email            VARCHAR(100) NOT NULL,
+    created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    is_active        BOOLEAN DEFAULT TRUE
 );

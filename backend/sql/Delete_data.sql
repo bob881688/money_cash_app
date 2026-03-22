@@ -1,2 +1,3 @@
 DELETE FROM log_data
-WHERE log_id = :log_id;
+WHERE log_id = :log_id AND
+      user_id = :user_id;
