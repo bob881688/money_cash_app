@@ -1,0 +1,18 @@
+services:
+  postgres:
+    image: postgres:18
+    container_name: postgreSQL18
+    env_file:
+      - docker.env
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "${PG_PORT:-5433}:5432"   # 先用 5433 避免跟本機 5432 衝突；完成後可改回 5432
+    volumes:
+      - "${PGDATA_PATH}:/var/lib/postgresql"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped

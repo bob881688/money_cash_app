@@ -46,5 +46,6 @@ app.*.map.json
 
 /assets/.env
 /backend/.env
+docker.env
 /backend/__pycache__/
 .vscode/
